@@ -851,6 +851,9 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
                 settings.typing_tool,
             )?;
         }
+        PasteMethod::DirectCompatibility => {
+            input::paste_text_slow(&mut enigo, &text)?;
+        }
         PasteMethod::CtrlV | PasteMethod::CtrlShiftV | PasteMethod::ShiftInsert => {
             // Debug-gated receipt-sequenced paste (#502): restore the clipboard
             // after the target actually reads the transcript, not on a timer.
@@ -1035,6 +1038,10 @@ e.g. 28:1 28:0 means pressing on the Enter button on a standard US keyboard.
     fn auto_submit_runs_for_active_paste_methods() {
         assert!(should_send_auto_submit(true, PasteMethod::CtrlV));
         assert!(should_send_auto_submit(true, PasteMethod::Direct));
+        assert!(should_send_auto_submit(
+            true,
+            PasteMethod::DirectCompatibility
+        ));
         assert!(should_send_auto_submit(true, PasteMethod::CtrlShiftV));
         assert!(should_send_auto_submit(true, PasteMethod::ShiftInsert));
     }

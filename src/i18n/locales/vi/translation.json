@@ -533,6 +533,7 @@
           "clipboardCtrlShiftV": "Bảng nhớ tạm (Ctrl+Shift+V)",
           "clipboardShiftInsert": "Bảng nhớ tạm (Shift+Insert)",
           "direct": "Trực tiếp",
+          "directCompatibility": "Direct (Slow)",
           "none": "Không có",
           "externalScript": "Script bên ngoài"
         },
