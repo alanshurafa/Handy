@@ -55,7 +55,9 @@ const OVERLAY_STREAM_HEIGHT: f64 = 120.0;
 
 /// Overlay window size (logical) for a given UI state.
 fn overlay_dimensions(state: &str) -> (f64, f64) {
-    if state == "streaming" {
+    if state == "editing" {
+        (400.0, 320.0)
+    } else if state == "streaming" {
         (OVERLAY_STREAM_WIDTH, OVERLAY_STREAM_HEIGHT)
     } else {
         (OVERLAY_WIDTH, OVERLAY_HEIGHT)
@@ -288,6 +290,8 @@ fn current_overlay_logical_size(window: &tauri::webview::WebviewWindow) -> Optio
 
 #[cfg(target_os = "windows")]
 static WINDOWS_OVERLAY_IS_STREAMING: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "windows")]
+static WINDOWS_OVERLAY_IS_EDITING: AtomicBool = AtomicBool::new(false);
 
 /// Windows accessibility text size (Settings > Accessibility > Text size), a
 /// separate axis from display scaling that WebView2 applies as a document zoom.
@@ -508,6 +512,14 @@ fn show_overlay_state(app_handle: &AppHandle, state: &str) {
 }
 
 fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
+    // A cancellation may overtake a show queued by the stream worker.
+    if state == "editing"
+        && !app_handle
+            .state::<crate::overlay_edit::OverlayEditor>()
+            .active()
+    {
+        return;
+    }
     // Size the overlay for this state (compact vs. streaming), then position it.
     let (width, height) = overlay_dimensions(state);
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
@@ -539,6 +551,8 @@ fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
                 overlay_window.set_size(tauri::Size::Logical(tauri::LogicalSize { width, height }));
             #[cfg(target_os = "windows")]
             WINDOWS_OVERLAY_IS_STREAMING.store(state == "streaming", Ordering::Relaxed);
+            #[cfg(target_os = "windows")]
+            WINDOWS_OVERLAY_IS_EDITING.store(state == "editing", Ordering::Relaxed);
             let size_elapsed = size_started.elapsed();
 
             let pos_started = std::time::Instant::now();
@@ -620,6 +634,30 @@ pub fn show_streaming_overlay(app_handle: &AppHandle) {
     show_overlay_state(app_handle, "streaming");
 }
 
+pub fn show_editing_overlay(app_handle: &AppHandle) {
+    show_overlay_state(app_handle, "editing");
+}
+
+#[cfg(all(debug_assertions, target_os = "windows"))]
+pub fn show_editor_preview(app: &AppHandle) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        show_overlay_state_on_main(&handle, "streaming");
+        if let Some(w) = handle.get_webview_window("recording_overlay") {
+            let _ = w.set_title("Handy editor preview (no microphone)");
+        }
+        let _ = handle.emit_to("recording_overlay", "recording-ready", ());
+        let _ = handle.emit_to(
+            "recording_overlay",
+            "stream-text-event",
+            crate::managers::transcription::StreamTextEvent {
+                committed: "The cat waits".into(),
+                tentative: String::new(),
+            },
+        );
+    });
+}
+
 /// Shows the transcribing overlay window
 pub fn show_transcribing_overlay(app_handle: &AppHandle) {
     show_overlay_state(app_handle, "transcribing");
@@ -652,7 +690,9 @@ fn update_overlay_position_on_main(app_handle: &AppHandle) {
 
         #[cfg(target_os = "windows")]
         {
-            let state = if WINDOWS_OVERLAY_IS_STREAMING.load(Ordering::Relaxed) {
+            let state = if WINDOWS_OVERLAY_IS_EDITING.load(Ordering::Relaxed) {
+                "editing"
+            } else if WINDOWS_OVERLAY_IS_STREAMING.load(Ordering::Relaxed) {
                 "streaming"
             } else {
                 "recording"

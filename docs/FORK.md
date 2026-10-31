@@ -1,18 +1,20 @@
-# Spoken snippets fork
+# Handy fork additions
 
-This is Alan's fork of [cjpais/Handy](https://github.com/cjpais/Handy), adding local spoken snippets. It retains Handy's upstream MIT license and credits. Snippet code in this fork is newly written; the related projects below informed the feature comparison, not copied implementation.
+This is Alan's fork of [cjpais/Handy](https://github.com/cjpais/Handy), adding local spoken snippets and a Windows live transcript editor. It retains Handy's upstream MIT license and credits. Snippet code in this fork is newly written; the related projects below informed the feature comparison, not copied implementation.
 
 ## What this fork adds
 
-| Feature                       | Where                      | Behavior                                                                                                                                                                         |
-| ----------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Spoken snippets               | Snippets settings screen   | Map a spoken phrase such as “my work email” to an exact email address or other saved text. Add, edit, remove, and enable individual entries.                                     |
-| Local deterministic expansion | Final transcription output | Whole phrases match without case sensitivity; whitespace differences are ignored. Longer phrases win at the same position. Inserted text is literal and is never expanded again. |
-| Runtime undo                  | Snippets toggle            | Off by default. Turning it off immediately returns output to ordinary Handy behavior without deleting saved entries.                                                             |
-| Preserve recognition history  | History                    | The original transcription is retained. Final expanded text is also stored in the existing processed-text field when it differs.                                                 |
-| Protect fork installation     | Updater                    | Upstream self-updates are disabled so an official Handy release cannot silently remove this fork's features. Install fork updates manually.                                      |
+| Feature                       | Where                             | Behavior                                                                                                                                                                         |
+| ----------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Spoken snippets               | Snippets settings screen          | Map a spoken phrase such as “my work email” to an exact email address or other saved text. Add, edit, remove, and enable individual entries.                                     |
+| Live transcript editing       | Live recording overlay on Windows | Click the transcript to edit while recording continues. Manual corrections take precedence over recognition updates; uncertain merges expose the latest recognition separately.  |
+| Review before paste           | Live transcript editor            | **Stop & review** finishes recognition without sending text. **Paste** sends the reviewed draft to the captured destination. A reported failure keeps the draft available.       |
+| Local deterministic expansion | Final transcription output        | Whole phrases match without case sensitivity; whitespace differences are ignored. Longer phrases win at the same position. Inserted text is literal and is never expanded again. |
+| Runtime undo                  | Snippets toggle                   | Off by default. Turning it off immediately returns output to ordinary Handy behavior without deleting saved entries.                                                             |
+| Preserve recognition history  | History                           | The original transcription is retained. Final expanded text is also stored in the existing processed-text field when it differs.                                                 |
+| Protect fork installation     | Updater                           | Upstream self-updates are disabled so an official Handy release cannot silently remove this fork's features. Install fork updates manually.                                      |
 
-No second hotkey, general fuzzy autocorrect, regex rules, cloud service, or automatic Wispr Flow import is added by this change.
+Snippet expansion uses the existing dictation shortcut and runs locally. Phrase matching is deterministic; it does not use fuzzy autocorrect or regex rules.
 
 ## Using snippets
 
@@ -26,6 +28,20 @@ In sentences, punctuation around a phrase is preserved. When the entire transcri
 Disabling Snippets restores ordinary behavior for subsequent transcriptions. To return to upstream Handy, reinstall the official application; its model and settings directories are unchanged. Back up settings before switching versions, since upstream may discard fields it does not recognize.
 
 Normal paste preferences still apply. If you do not want a space added after an email address, turn off **Advanced → Append Trailing Space**. Snippets do not change that preference.
+
+## Editing a live transcript (Windows)
+
+1. Start dictation with the live transcript overlay enabled, leaving the destination text field active.
+2. Click the transcript in the overlay. Recording continues while you edit, and new speech is merged into the draft. Your manual corrections take precedence.
+3. Choose **Stop & review** or press **Ctrl+Enter** to stop recording and wait for the remaining speech to finish transcribing. The normal stop shortcut also leaves an open editor ready for review.
+4. Read the final draft. If recognition could not be merged safely, **Latest recognition** appears separately so you can copy any missing words into your draft.
+5. Choose **Paste** or press **Ctrl+Enter** again to send the reviewed draft. Enter alone inserts a line break. Moving focus away does not paste.
+
+**Cancel** or **Escape** discards the editor draft without pasting. Ordinary dictation keeps its existing behavior when you do not open the editor.
+
+Paste tries to restore the destination active before you opened the editor, with the recording-start destination as a fallback. If that destination cannot be restored or paste reports an error, the editor keeps your draft so you can copy it manually or retry. Check the destination before retrying to avoid duplicate text if the first attempt reached it.
+
+The editor is Windows-first. On macOS and Linux, the live transcript remains read-only and explains that editing is currently available on Windows. Recognition can revise earlier words as well as append new ones; review the finalized draft before sending it. The browser fixture does not verify microphone capture, native focus restoration, or delivery into another application.
 
 ## Other forks worth inspecting
 

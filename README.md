@@ -1,6 +1,6 @@
 # Handy
 
-> **This fork adds spoken snippets:** map phrases such as “my work email” to an exact address or saved text in the **Snippets** settings screen. Expansion is local and optional. [Features, usage, rollback, and related forks](docs/FORK.md). Fork builds disable upstream self-updates to preserve these additions. This is an independent fork of [cjpais/Handy](https://github.com/cjpais/Handy).
+> **This fork adds spoken snippets and a live transcript editor.** Save phrases such as “my work email” in **Snippets**. On Windows, click the live transcript to correct text while recording continues, then **Stop & review** and **Paste** when ready. [Features, usage, rollback, and related forks](docs/FORK.md). Fork builds disable upstream self-updates to preserve these additions. This is an independent fork of [cjpais/Handy](https://github.com/cjpais/Handy).
 
 ![Spoken snippets settings screen](docs/images/snippets-settings.png)
 
@@ -36,7 +36,12 @@ The process is entirely local:
 
 ## Using this fork
 
-Build this fork from source to get Snippets; see [fork build notes](docs/FORK.md#building) and [BUILD.md](BUILD.md). The original Handy installation instructions follow below.
+Build this fork from source; see [fork build notes](docs/FORK.md#building) and [BUILD.md](BUILD.md).
+
+- **[Spoken snippets](docs/FORK.md#using-snippets):** optional local phrase expansion, configured in the sidebar.
+- **[Live transcript editor](docs/FORK.md#editing-a-live-transcript-windows):** click the live transcript on Windows to edit while you keep speaking. **Stop & review** waits for final recognition; a separate **Paste** sends the reviewed text. macOS and Linux retain a read-only live preview.
+
+The original Handy installation instructions follow below.
 
 ## Upstream Handy Quick Start
 

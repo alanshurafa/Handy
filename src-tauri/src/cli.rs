@@ -4,6 +4,10 @@ use std::path::PathBuf;
 #[derive(Parser, Debug, Clone, Default)]
 #[command(name = "handy", about = "Handy - Speech to Text")]
 pub struct CliArgs {
+    /// Isolated editor verification with synthetic text, no microphone or hooks.
+    #[cfg(all(debug_assertions, target_os = "windows"))]
+    #[arg(long, hide = true)]
+    pub preview_live_editor: bool,
     /// Start with the main window hidden
     #[arg(long)]
     pub start_hidden: bool,

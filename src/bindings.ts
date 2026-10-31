@@ -349,7 +349,39 @@ async updateSnippets(snippets: Snippet[]) : Promise<Result<null, string>> {
     return { status: "ok", data: await TAURI_INVOKE("update_snippets", { snippets }) };
 } catch (e) {
     if(e instanceof Error) throw e;
-    else return { status: "error", error: e as string };
+    else return { status: "error", error: e  as any };
+}
+},
+async getOverlayEditState() : Promise<Result<OverlayEditSnapshot, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_overlay_edit_state") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async beginOverlayEdit() : Promise<Result<OverlayEditSnapshot, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("begin_overlay_edit") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async updateOverlayEditDraft(sessionId: number, userRevision: number, baseAsr: string, text: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_overlay_edit_draft", { sessionId, userRevision, baseAsr, text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async submitOverlayEdit(sessionId: number, userRevision: number, baseAsr: string, text: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("submit_overlay_edit", { sessionId, userRevision, baseAsr, text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
 }
 },
 async changeSnippetsEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
@@ -357,7 +389,7 @@ async changeSnippetsEnabledSetting(enabled: boolean) : Promise<Result<null, stri
     return { status: "ok", data: await TAURI_INVOKE("change_snippets_enabled_setting", { enabled }) };
 } catch (e) {
     if(e instanceof Error) throw e;
-    else return { status: "error", error: e as string };
+    else return { status: "error", error: e  as any };
 }
 },
 /**
@@ -1031,10 +1063,8 @@ async updateRecordingRetentionPeriod(period: string) : Promise<Result<null, stri
 }
 },
 /**
- * Checks if the Mac is a laptop by detecting battery presence
- * 
- * This uses pmset to check for battery information.
- * Returns true if a battery is detected (laptop), false otherwise (desktop)
+ * Stub implementation for non-macOS platforms
+ * Always returns false since laptop detection is macOS-specific
  */
 async isLaptop() : Promise<Result<boolean, string>> {
     try {
@@ -1079,8 +1109,6 @@ transcriptionJob: "transcription-job"
  * Field-level defaults below take precedence where present.
  */
 export type AppSettings = { 
-snippets_enabled?: boolean;
-snippets?: Snippet[];
 /**
  * Internal settings schema marker for one-time migrations. Fresh installs
  * start at the current version; existing stores missing this key are
@@ -1118,7 +1146,7 @@ selected_channel?: number | null; clamshell_microphone?: string | null; selected
  * Every language the person dictates in (codes, e.g. ["en", "zh"]),
  * picked during onboarding. Empty until then.
  */
-spoken_languages?: string[]; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; 
+spoken_languages?: string[]; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; snippets_enabled?: boolean; snippets?: Snippet[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number;
 /**
  * Debug-gated ("beta") receipt-sequenced paste: restore the clipboard only
  * after the target app actually reads the transcript, instead of after a
@@ -1310,6 +1338,8 @@ sha256: string | null } } |
  */
 "Local"
 export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "min_10" | "min_15" | "hour_1" | "sec_15"
+export type OverlayEditPhase = "inactive" | "recording" | "finalizing" | "review" | "pasting"
+export type OverlayEditSnapshot = { session_id: number; phase: OverlayEditPhase; text: string; asr_text: string; revision: number; user_revision: number; conflict: boolean; paste_requested: boolean; supported: boolean }
 export type OverlayPosition = "top" | "bottom"
 /**
  * Which recording overlay to display. `Minimal` and `Live` share one base
@@ -1414,6 +1444,9 @@ export type ShortcutActivation =
  */
 "hold_or_toggle"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
+/**
+ * A literal spoken phrase and its saved expansion. Disabled entries are kept.
+ */
 export type Snippet = { id: string; phrase: string; replacement: string; enabled: boolean }
 export type SoundTheme = "marimba" | "pop" | "custom"
 /**

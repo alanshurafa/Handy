@@ -17,6 +17,7 @@ mod llm_client;
 mod managers;
 mod memory;
 mod overlay;
+mod overlay_edit;
 mod paste_tx;
 pub mod portable;
 mod secure_input;
@@ -714,6 +715,10 @@ pub fn run(cli_args: CliArgs) {
             shortcut::set_post_process_selected_prompt,
             shortcut::update_custom_words,
             shortcut::update_snippets,
+            overlay_edit::get_overlay_edit_state,
+            overlay_edit::begin_overlay_edit,
+            overlay_edit::update_overlay_edit_draft,
+            overlay_edit::submit_overlay_edit,
             shortcut::change_snippets_enabled_setting,
             shortcut::suspend_all_bindings,
             shortcut::resume_all_bindings,
@@ -825,6 +830,10 @@ pub fn run(cli_args: CliArgs) {
     // note below), not forward to an already-running app.
     let headless_mode =
         cli_args.transcribe_file.is_some() || cli_args.list_devices || cli_args.list_models;
+    #[cfg(all(debug_assertions, target_os = "windows"))]
+    let editor_preview = cli_args.preview_live_editor;
+    #[cfg(not(all(debug_assertions, target_os = "windows")))]
+    let editor_preview = false;
 
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
@@ -888,7 +897,7 @@ pub fn run(cli_args: CliArgs) {
     // (--transcribe-file/--list-devices/--list-models) a silent no-op whenever the
     // app is already open, so skip it in headless mode and run a standalone
     // instance instead.
-    if !headless_mode {
+    if !headless_mode && !editor_preview {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if args.iter().any(|a| a == "--toggle-transcription") {
                 signal_handle::send_transcription_input(app, "transcribe", "CLI");
@@ -927,6 +936,7 @@ pub fn run(cli_args: CliArgs) {
             Some(vec![]),
         ))
         .manage(cli_args.clone())
+        .manage(overlay_edit::OverlayEditor::default())
         .setup(move |app| {
             #[cfg(target_os = "windows")]
             log::info!(
@@ -975,6 +985,15 @@ pub fn run(cli_args: CliArgs) {
                     let _ = std::io::stderr().flush();
                     std::process::exit(code);
                 });
+                return Ok(());
+            }
+
+            #[cfg(all(debug_assertions, target_os = "windows"))]
+            if editor_preview {
+                // No audio/model managers, global shortcuts, autostart or tray.
+                app.manage(input::EnigoState::new().map_err(std::io::Error::other)?);
+                overlay_edit::start_preview(app.handle());
+                overlay::create_recording_overlay(app.handle());
                 return Ok(());
             }
 
