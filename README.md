@@ -1,5 +1,9 @@
 # Handy
 
+> **This fork adds spoken snippets:** map phrases such as “my work email” to an exact address or saved text in the **Snippets** settings screen. Expansion is local and optional. [Features, usage, rollback, and related forks](docs/FORK.md). Fork builds disable upstream self-updates to preserve these additions. This is an independent fork of [cjpais/Handy](https://github.com/cjpais/Handy).
+
+![Spoken snippets settings screen](docs/images/snippets-settings.png)
+
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/invite/WVBeWsNXK4)
 
 **A free, open source, and extensible speech-to-text application that works completely offline.**
@@ -30,7 +34,11 @@ The process is entirely local:
   - **Parakeet V3** - CPU-optimized model with excellent performance and automatic language detection
 - Works on Windows, macOS, and Linux
 
-## Quick Start
+## Using this fork
+
+Build this fork from source to get Snippets; see [fork build notes](docs/FORK.md#building) and [BUILD.md](BUILD.md). The original Handy installation instructions follow below.
+
+## Upstream Handy Quick Start
 
 ### Installation
 

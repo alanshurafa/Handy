@@ -1,4 +1,3 @@
-use crate::utils;
 use log::{debug, warn};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -85,6 +84,26 @@ pub struct ShortcutBinding {
     pub description: String,
     pub default_binding: String,
     pub current_binding: String,
+}
+
+/// A literal spoken phrase and its saved expansion. Disabled entries are kept.
+#[derive(Serialize, Deserialize, Clone, Type)]
+pub struct Snippet {
+    pub id: String,
+    pub phrase: String,
+    pub replacement: String,
+    pub enabled: bool,
+}
+
+impl fmt::Debug for Snippet {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Settings are logged at startup; saved text can contain private data.
+        f.debug_struct("Snippet")
+            .field("enabled", &self.enabled)
+            .field("phrase_chars", &self.phrase.chars().count())
+            .field("replacement_chars", &self.replacement.chars().count())
+            .finish()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Type)]
@@ -461,6 +480,10 @@ pub struct AppSettings {
     pub log_level: LogLevel,
     #[serde(default)]
     pub custom_words: Vec<String>,
+    #[serde(default)]
+    pub snippets_enabled: bool,
+    #[serde(default)]
+    pub snippets: Vec<Snippet>,
     #[serde(default)]
     pub model_unload_timeout: ModelUnloadTimeout,
     #[serde(default = "default_word_correction_threshold")]
@@ -1018,6 +1041,8 @@ pub fn get_default_settings() -> AppSettings {
         debug_mode: false,
         log_level: default_log_level(),
         custom_words: Vec::new(),
+        snippets_enabled: false,
+        snippets: Vec::new(),
         model_unload_timeout: ModelUnloadTimeout::default(),
         word_correction_threshold: default_word_correction_threshold(),
         history_limit: default_history_limit(),
@@ -1372,19 +1397,14 @@ fn os_languages() -> &'static [String] {
     }
 }
 
-/// Update checks are forced off (without touching the persisted setting) when
-/// `HANDY_DISABLE_UPDATER` is set — e.g. by the Nix package, since self-update
-/// can't work against an immutable /nix/store install.
+/// This fork never installs upstream releases, which would remove snippets.
+/// Keep the user's persisted preference intact for reverting to upstream.
 pub fn update_checks_forced_disabled() -> bool {
-    use std::sync::OnceLock;
-    static IS_UPDATER_DISABLED: OnceLock<bool> = OnceLock::new();
-    *IS_UPDATER_DISABLED.get_or_init(|| utils::env_flag_enabled("HANDY_DISABLE_UPDATER"))
+    true
 }
 
-/// Effective updater state: the user's stored preference, overridden to `false`
-/// while `HANDY_DISABLE_UPDATER` is set. Callers deciding whether to actually
-/// check for updates must use this rather than reading `update_checks_enabled`
-/// directly, so the forced-off state never leaks into the persisted setting.
+/// Effective updater state. The fork override never changes the stored user
+/// preference; callers must use this instead of reading the preference directly.
 pub fn update_checks_effectively_enabled(settings: &AppSettings) -> bool {
     settings.update_checks_enabled && !update_checks_forced_disabled()
 }
@@ -1395,6 +1415,25 @@ pub fn write_settings(app: &AppHandle, settings: AppSettings) {
         .expect("Failed to initialize store");
 
     store.set("settings", serde_json::to_value(&settings).unwrap());
+}
+
+/// Snippet edits report persistence failures and restore the previous in-memory
+/// value, so the editor never claims an unsaved change succeeded.
+pub fn write_settings_checked(app: &AppHandle, settings: AppSettings) -> Result<(), String> {
+    let store = app
+        .store(crate::portable::store_path(SETTINGS_STORE_PATH))
+        .map_err(|_| "Could not open settings".to_string())?;
+    let previous = store.get("settings");
+    let value =
+        serde_json::to_value(&settings).map_err(|_| "Could not encode settings".to_string())?;
+    store.set("settings", value);
+    if store.save().is_err() {
+        if let Some(previous) = previous {
+            store.set("settings", previous);
+        }
+        return Err("Could not save settings to disk".to_string());
+    }
+    Ok(())
 }
 
 pub fn get_bindings(app: &AppHandle) -> HashMap<String, ShortcutBinding> {
@@ -1459,9 +1498,24 @@ mod tests {
         );
         assert_eq!(settings.hold_threshold_ms, default_hold_threshold_ms());
         assert!(!settings.audio_feedback);
+        assert!(!settings.snippets_enabled);
+        assert!(settings.snippets.is_empty());
         assert!(settings.filler_word_removal_enabled);
         // Bindings default to empty; the load path merges the real defaults in.
         assert!(settings.bindings.is_empty());
+    }
+
+    #[test]
+    fn snippet_debug_does_not_log_saved_text() {
+        let snippet = Snippet {
+            id: "private-id".into(),
+            phrase: "private spoken phrase".into(),
+            replacement: "private@example.com".into(),
+            enabled: true,
+        };
+        let logged = format!("{snippet:?}");
+        assert!(!logged.contains("private"));
+        assert!(logged.contains("replacement_chars"));
     }
 
     /// Frozen snapshot of a real v0.9.0-era settings store, as written to
