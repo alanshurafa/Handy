@@ -616,7 +616,13 @@
         "placeholder": "Add a word",
         "add": "Add",
         "remove": "Remove {{word}}",
-        "duplicate": "\"{{word}}\" already exists"
+        "duplicate": "\"{{word}}\" already exists",
+        "sortAlpha": "A–Z",
+        "sortAlphaDesc": "Z–A",
+        "sortAlphaTitle": "Sort alphabetically (click again to reverse)",
+        "sortOldest": "Oldest",
+        "sortNewest": "Newest",
+        "sortDateTitle": "Sort by the order words were added (click again to reverse)"
       },
       "voiceActivityDetection": {
         "title": "Voice Activity Detection",

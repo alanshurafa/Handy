@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { notify } from "@/stores/noticeStore";
 import { useSettings } from "../../hooks/useSettings";
@@ -11,6 +11,27 @@ interface CustomWordsProps {
   descriptionMode?: "inline" | "tooltip";
   grouped?: boolean;
 }
+
+type SortMode = "date-asc" | "date-desc" | "alpha-asc" | "alpha-desc";
+
+const SORT_STORAGE_KEY = "handy.customWords.sort";
+const SORT_MODES: SortMode[] = [
+  "date-asc",
+  "date-desc",
+  "alpha-asc",
+  "alpha-desc",
+];
+
+// Display order only: the saved list keeps the order words were added, which
+// is the only "date" information custom words have.
+const readSortMode = (): SortMode => {
+  try {
+    const saved = localStorage.getItem(SORT_STORAGE_KEY) as SortMode | null;
+    return saved && SORT_MODES.includes(saved) ? saved : "date-asc";
+  } catch {
+    return "date-asc";
+  }
+};
 
 const normalizeCustomWord = (word: string) =>
   word
@@ -25,6 +46,39 @@ export const CustomWords: React.FC<CustomWordsProps> = React.memo(
     const [newWord, setNewWord] = useState("");
     const customWords = getSetting("custom_words") || [];
     const normalizedWord = normalizeCustomWord(newWord);
+    const [sortMode, setSortMode] = useState<SortMode>(readSortMode);
+
+    const sortedWords = useMemo(() => {
+      switch (sortMode) {
+        case "date-desc":
+          return [...customWords].reverse();
+        case "alpha-asc":
+          return [...customWords].sort((a, b) =>
+            a.localeCompare(b, undefined, { sensitivity: "base" }),
+          );
+        case "alpha-desc":
+          return [...customWords].sort((a, b) =>
+            b.localeCompare(a, undefined, { sensitivity: "base" }),
+          );
+        default:
+          return customWords;
+      }
+    }, [customWords, sortMode]);
+
+    const changeSortMode = (mode: SortMode) => {
+      setSortMode(mode);
+      try {
+        localStorage.setItem(SORT_STORAGE_KEY, mode);
+      } catch {
+        // Remembering the sort is a convenience; ignore storage failures.
+      }
+    };
+
+    const isAlphaSort = sortMode.startsWith("alpha");
+    const handleAlphaSort = () =>
+      changeSortMode(sortMode === "alpha-asc" ? "alpha-desc" : "alpha-asc");
+    const handleDateSort = () =>
+      changeSortMode(sortMode === "date-asc" ? "date-desc" : "date-asc");
 
     const handleAddWord = () => {
       if (normalizedWord && normalizedWord.length <= 50) {
@@ -87,13 +141,37 @@ export const CustomWords: React.FC<CustomWordsProps> = React.memo(
             >
               {t("settings.advanced.customWords.add")}
             </Button>
+            <Button
+              onClick={handleAlphaSort}
+              disabled={customWords.length < 2}
+              variant={isAlphaSort ? "primary-soft" : "secondary"}
+              size="md"
+              aria-pressed={isAlphaSort}
+              title={t("settings.advanced.customWords.sortAlphaTitle")}
+            >
+              {sortMode === "alpha-desc"
+                ? t("settings.advanced.customWords.sortAlphaDesc")
+                : t("settings.advanced.customWords.sortAlpha")}
+            </Button>
+            <Button
+              onClick={handleDateSort}
+              disabled={customWords.length < 2}
+              variant={isAlphaSort ? "secondary" : "primary-soft"}
+              size="md"
+              aria-pressed={!isAlphaSort}
+              title={t("settings.advanced.customWords.sortDateTitle")}
+            >
+              {sortMode === "date-desc"
+                ? t("settings.advanced.customWords.sortNewest")
+                : t("settings.advanced.customWords.sortOldest")}
+            </Button>
           </div>
         </SettingContainer>
         {customWords.length > 0 && (
           <div
             className={`px-4 p-2 ${grouped ? "" : "rounded-lg border border-line"} flex flex-wrap gap-1`}
           >
-            {customWords.map((word) => (
+            {sortedWords.map((word) => (
               <Button
                 key={word}
                 onClick={() => handleRemoveWord(word)}
