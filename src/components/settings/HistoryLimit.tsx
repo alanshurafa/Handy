@@ -1,5 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
+import { notify } from "@/stores/noticeStore";
 import { useSettings } from "../../hooks/useSettings";
 import { Input } from "../ui/Input";
 import { SettingContainer } from "../ui/SettingContainer";
@@ -21,6 +22,13 @@ export const HistoryLimit: React.FC<HistoryLimitProps> = ({
   const handleChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseInt(event.target.value, 10);
     if (!isNaN(value) && value >= 0) {
+      if (value < historyLimit) {
+        notify({
+          title: t("settings.debug.historyLimit.warningTitle"),
+          detail: t("settings.debug.historyLimit.warningDescription"),
+          level: "warning",
+        });
+      }
       updateSetting("history_limit", value);
     }
   };

@@ -1,5 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
+import { notify } from "@/stores/noticeStore";
 import { Dropdown } from "../ui/Dropdown";
 import { SettingContainer } from "../ui/SettingContainer";
 import { useSettings } from "../../hooks/useSettings";
@@ -20,6 +21,13 @@ export const RecordingRetentionPeriodSelector: React.FC<RecordingRetentionPeriod
     const historyLimit = getSetting("history_limit") || 5;
 
     const handleRetentionPeriodSelect = async (period: string) => {
+      if (selectedRetentionPeriod === "never" && period !== "never") {
+        notify({
+          title: t("settings.debug.recordingRetention.warningTitle"),
+          detail: t("settings.debug.recordingRetention.warningDescription"),
+          level: "warning",
+        });
+      }
       await updateSetting(
         "recording_retention_period",
         period as RecordingRetentionPeriod,
