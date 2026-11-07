@@ -215,7 +215,8 @@ struct Shared {
     /// CPU-only, device probes included.
     gpu_allowed: bool,
     /// A worker with GPU backends crashed or hung (in backend init, device
-    /// listing, model load or inference). Models load in CPU-only workers,
+    /// listing, model load or inference), or its GPU failed mid-inference (a
+    /// lost device). Models load in CPU-only workers,
     /// and devices are not listed again, until [`EngineSupervisor::retry_gpu`].
     gpu_unavailable: AtomicBool,
     /// The loaded model (logically: it stays loaded while its worker is
@@ -576,13 +577,19 @@ enum Failure {
     Crashed(String),
     /// The worker did not answer within the deadline and was killed.
     Hung(Duration),
+    /// transcribe.cpp failed on the GPU (e.g. a lost device). The worker is
+    /// alive, but its device may never work again.
+    Gpu(String),
     Cancelled,
 }
 
 impl Failure {
-    /// Whether the worker is gone.
+    /// Whether the worker is gone, or must be replaced.
     fn worker_lost(&self) -> bool {
-        matches!(self, Failure::Crashed(_) | Failure::Hung(_))
+        matches!(
+            self,
+            Failure::Crashed(_) | Failure::Hung(_) | Failure::Gpu(_)
+        )
     }
 }
 
@@ -590,7 +597,7 @@ impl fmt::Display for Failure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Failure::Spawn(e) => write!(f, "failed to start transcription worker: {e}"),
-            Failure::Remote(message) => f.write_str(message),
+            Failure::Remote(message) | Failure::Gpu(message) => f.write_str(message),
             Failure::Crashed(detail) => write!(f, "transcription worker crashed ({detail})"),
             Failure::Hung(t) => write!(f, "transcription worker did not respond within {t:?}"),
             Failure::Cancelled => f.write_str("cancelled"),
@@ -801,8 +808,8 @@ impl Owner {
         Ok(())
     }
 
-    /// Drop a worker that crashed or hung (its handle already logged the
-    /// details and native output). If it was on a GPU, mark the GPU
+    /// Drop a worker that crashed, hung or lost its GPU (the details and
+    /// native output are already logged). If it was on a GPU, mark the GPU
     /// unavailable so the next worker uses CPU. Returns whether it was.
     fn worker_lost(&mut self, during: &str, failure: &Failure) -> bool {
         // Dropping the handle reaps the process.
@@ -876,8 +883,9 @@ impl Owner {
         result
     }
 
-    /// Retry once after a crash or hang, on CPU if it happened on the GPU.
-    /// Not after a hang on CPU, and never for an explicitly chosen device.
+    /// Retry once after a crash, hang or GPU failure, on CPU if it happened
+    /// on the GPU. Not after a hang on CPU, and never for an explicitly
+    /// chosen device.
     fn transcribe(
         &mut self,
         pcm: &[f32],
@@ -1245,6 +1253,7 @@ impl Worker {
     fn wait(&mut self, request: &Request, deadline: Duration) -> Result<Response, Failure> {
         match self.responses.recv_timeout(deadline) {
             Ok(Response::Error(message)) => Err(Failure::Remote(message)),
+            Ok(Response::GpuError(message)) => Err(Failure::Gpu(message)),
             Ok(response) => Ok(response),
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 self.control.kill();

@@ -117,7 +117,7 @@ pub fn run() -> i32 {
                     inject_fault("run", info.on_gpu);
                     match session.run(&pcm, &options) {
                         Ok(transcript) => Response::Transcript(transcript),
-                        Err(e) => Response::Error(e.to_string()),
+                        Err(e) => error_response(e, info.on_gpu),
                     }
                 }
                 None => not_loaded(),
@@ -136,7 +136,7 @@ pub fn run() -> i32 {
                         crate::memory::trim_freed_memory();
                         continue;
                     }
-                    Err(e) => Response::Error(e.to_string()),
+                    Err(e) => error_response(e, info.on_gpu),
                 },
                 None => not_loaded(),
             },
@@ -205,7 +205,7 @@ fn serve_stream(
                             .then(|| stream.text());
                         (Response::Fed { update, text }, false)
                     }
-                    Err(e) => (Response::Error(e.to_string()), false),
+                    Err(e) => (error_response(e, on_gpu), false),
                 }
             }
             Request::Finalize { want_language } => {
@@ -228,7 +228,7 @@ fn serve_stream(
                         )
                     }
                     // Finalize ends the stream even when it fails.
-                    Err(e) => (Response::Error(e.to_string()), true),
+                    Err(e) => (error_response(e, on_gpu), true),
                 }
             }
             Request::StreamReset => {
@@ -250,6 +250,37 @@ fn serve_stream(
 
 fn not_loaded() -> Response {
     Response::Error("no model loaded".to_string())
+}
+
+/// transcribe.cpp reports a lost Vulkan device (and any other exception from
+/// the GPU backend) as a backend error, and the device stays lost for the
+/// rest of this process: every later run fails the same way. On a GPU, tell
+/// the parent so it replaces this worker.
+fn error_response(e: transcribe_cpp::Error, on_gpu: bool) -> Response {
+    if on_gpu && matches!(e, transcribe_cpp::Error::Backend(_)) {
+        Response::GpuError(e.to_string())
+    } else {
+        Response::Error(e.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use transcribe_cpp::Error;
+
+    /// Only a backend error on a GPU makes the parent replace the worker.
+    #[test]
+    fn gpu_backend_error_asks_for_a_new_worker() {
+        let lost = || Error::Backend("run: backend error (status 8)".into());
+        assert!(matches!(
+            error_response(lost(), true),
+            Response::GpuError(_)
+        ));
+        assert!(matches!(error_response(lost(), false), Response::Error(_)));
+        let oom = Error::OutOfMemory("run: out of memory".into());
+        assert!(matches!(error_response(oom, true), Response::Error(_)));
+    }
 }
 
 fn load(

@@ -85,6 +85,10 @@ pub enum Response {
     },
     Ok,
     Error(String),
+    /// A backend error while running on a GPU, such as a lost Vulkan device.
+    /// The device may stay unusable in this worker, so the parent replaces
+    /// it instead of sending it more work.
+    GpuError(String),
 }
 
 /// Serializable mirror of `transcribe_cpp::Device` (which holds a
