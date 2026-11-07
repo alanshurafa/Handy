@@ -13,6 +13,8 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 #[cfg(target_os = "linux")]
+use crate::linux_keymap::{self, PasteKeycodes};
+#[cfg(target_os = "linux")]
 use crate::utils::{is_gnome_wayland, is_kde_wayland, is_wayland};
 
 /// Serializes pastes: overlapping ones would restore each other's transcript as
@@ -627,51 +629,185 @@ fn send_key_combo_via_wtype(paste_method: &PasteMethod) -> Result<(), String> {
     Ok(())
 }
 
+/// The evdev keycodes of a paste chord in press order: modifiers first, the key last.
+#[cfg(target_os = "linux")]
+fn paste_chord_keycodes(
+    paste_method: &PasteMethod,
+    codes: PasteKeycodes,
+) -> Result<Vec<u32>, String> {
+    match paste_method {
+        PasteMethod::CtrlV => Ok(vec![codes.ctrl, codes.v]),
+        PasteMethod::CtrlShiftV => Ok(vec![codes.ctrl, codes.shift, codes.v]),
+        PasteMethod::ShiftInsert => Ok(vec![codes.shift, codes.insert]),
+        _ => Err("Unsupported paste method".into()),
+    }
+}
+
+/// Builds the dotool stdin script for a paste chord.
+///
+/// dotool's chord modifiers (`ctrl`, `shift`) and key names resolve through dotool's own
+/// keymap, which it compiles from `$DOTOOL_XKB_LAYOUT` (or the `$XKB_DEFAULT_*`
+/// variables), not from the session. With the standard keycodes the names are kept, so
+/// nothing changes on standard layouts and a dotool layout set by the user still applies.
+/// Otherwise every key goes by its Linux keycode (`k:N`) with explicit `keydown`/`keyup`,
+/// which dotool passes through untranslated, so the chord follows the session keymap.
+#[cfg(target_os = "linux")]
+fn dotool_key_script(paste_method: &PasteMethod, codes: PasteKeycodes) -> Result<String, String> {
+    if codes == PasteKeycodes::DEFAULT {
+        return match paste_method {
+            PasteMethod::CtrlV => Ok("key ctrl+v\n".into()),
+            PasteMethod::ShiftInsert => Ok("key shift+insert\n".into()),
+            PasteMethod::CtrlShiftV => Ok("key ctrl+shift+v\n".into()),
+            _ => Err("Unsupported paste method".into()),
+        };
+    }
+
+    let chord = paste_chord_keycodes(paste_method, codes)?;
+    let (key, modifiers) = chord.split_last().ok_or("Empty paste chord")?;
+    let codes_of = |keys: Vec<&u32>| {
+        keys.iter()
+            .map(|code| format!("k:{code}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    Ok(format!(
+        "keydown {}\nkey k:{key}\nkeyup {}\n",
+        codes_of(modifiers.iter().collect()),
+        codes_of(modifiers.iter().rev().collect())
+    ))
+}
+
 /// Send a key combination (e.g., Ctrl+V) via dotool.
 #[cfg(target_os = "linux")]
 fn send_key_combo_via_dotool(paste_method: &PasteMethod) -> Result<(), String> {
-    let command;
-    match paste_method {
-        PasteMethod::CtrlV => command = "echo key ctrl+v | dotool",
-        PasteMethod::ShiftInsert => command = "echo key shift+insert | dotool",
-        PasteMethod::CtrlShiftV => command = "echo key ctrl+shift+v | dotool",
-        _ => return Err("Unsupported paste method".into()),
-    }
+    use std::io::Write;
     use std::process::Stdio;
-    let status = Command::new("sh")
-        .arg("-c")
-        .arg(command)
+
+    let script = dotool_key_script(paste_method, linux_keymap::paste_keycodes())?;
+    let mut child = Command::new("dotool")
+        .stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| format!("Failed to execute dotool: {}", e))?;
-    if !status.success() {
-        return Err("dotool failed".into());
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(script.as_bytes())
+            .map_err(|e| format!("Failed to write to dotool stdin: {}", e))?;
+    }
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("Failed to wait for dotool: {}", e))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("dotool failed: {}", stderr));
     }
 
     Ok(())
+}
+
+/// The name ydotool 0.1.8's `key` command accepts for an evdev keycode, if it has one.
+/// Its parser (libevdevPlus `Table_ModifierKeys`, `Table_FunctionKeys` and
+/// `Table_LowerKeys`) is case-insensitive and knows only these modifiers, a few function
+/// keys, and single characters of the US layout.
+#[cfg(target_os = "linux")]
+fn ydotool_symbolic_name(code: u32) -> Option<&'static str> {
+    const CHARACTER_KEYS: [(u32, &str); 47] = [
+        (2, "1"),
+        (3, "2"),
+        (4, "3"),
+        (5, "4"),
+        (6, "5"),
+        (7, "6"),
+        (8, "7"),
+        (9, "8"),
+        (10, "9"),
+        (11, "0"),
+        (12, "-"),
+        (13, "="),
+        (16, "q"),
+        (17, "w"),
+        (18, "e"),
+        (19, "r"),
+        (20, "t"),
+        (21, "y"),
+        (22, "u"),
+        (23, "i"),
+        (24, "o"),
+        (25, "p"),
+        (26, "["),
+        (27, "]"),
+        (30, "a"),
+        (31, "s"),
+        (32, "d"),
+        (33, "f"),
+        (34, "g"),
+        (35, "h"),
+        (36, "j"),
+        (37, "k"),
+        (38, "l"),
+        (39, ";"),
+        (40, "'"),
+        (41, "`"),
+        (43, "\\"),
+        (44, "z"),
+        (45, "x"),
+        (46, "c"),
+        (47, "v"),
+        (48, "b"),
+        (49, "n"),
+        (50, "m"),
+        (51, ","),
+        (52, "."),
+        (53, "/"),
+    ];
+    let name = match code {
+        29 => "ctrl",
+        97 => "ctrl_r",
+        42 => "shift",
+        54 => "shift_r",
+        56 => "alt",
+        100 => "alt_r",
+        125 => "super",
+        126 => "super_r",
+        58 => "capslock",
+        110 => "insert",
+        _ => {
+            return CHARACTER_KEYS
+                .iter()
+                .find(|(key, _)| *key == code)
+                .map(|(_, name)| *name)
+        }
+    };
+    Some(name)
 }
 
 #[cfg(target_os = "linux")]
 fn ydotool_key_args(
     paste_method: &PasteMethod,
     syntax: YdotoolKeySyntax,
-) -> Result<&'static [&'static str], String> {
-    let args = match (paste_method, syntax) {
-        (PasteMethod::CtrlV, YdotoolKeySyntax::Symbolic) => &["key", "ctrl+v"][..],
-        (PasteMethod::CtrlShiftV, YdotoolKeySyntax::Symbolic) => &["key", "ctrl+shift+v"][..],
-        (PasteMethod::ShiftInsert, YdotoolKeySyntax::Symbolic) => &["key", "shift+insert"][..],
-        (PasteMethod::CtrlV, YdotoolKeySyntax::RawKeycodes) => {
-            &["key", "29:1", "47:1", "47:0", "29:0"][..]
+    codes: PasteKeycodes,
+) -> Result<Vec<String>, String> {
+    let chord = paste_chord_keycodes(paste_method, codes)?;
+    let mut args = vec!["key".to_string()];
+    match syntax {
+        YdotoolKeySyntax::RawKeycodes => {
+            args.extend(chord.iter().map(|code| format!("{code}:1")));
+            args.extend(chord.iter().rev().map(|code| format!("{code}:0")));
         }
-        (PasteMethod::CtrlShiftV, YdotoolKeySyntax::RawKeycodes) => {
-            &["key", "29:1", "42:1", "47:1", "47:0", "42:0", "29:0"][..]
+        YdotoolKeySyntax::Symbolic => {
+            // A key ydotool 0.1.8 has no name for keeps the name Handy always sent.
+            let defaults = paste_chord_keycodes(paste_method, PasteKeycodes::DEFAULT)?;
+            let names: Vec<&str> = chord
+                .iter()
+                .zip(defaults)
+                .filter_map(|(code, default)| {
+                    ydotool_symbolic_name(*code).or_else(|| ydotool_symbolic_name(default))
+                })
+                .collect();
+            args.push(names.join("+"));
         }
-        (PasteMethod::ShiftInsert, YdotoolKeySyntax::RawKeycodes) => {
-            &["key", "42:1", "110:1", "110:0", "42:0"][..]
-        }
-        _ => return Err("Unsupported paste method".into()),
-    };
+    }
 
     Ok(args)
 }
@@ -680,10 +816,10 @@ fn ydotool_key_args(
 #[cfg(target_os = "linux")]
 fn send_key_combo_via_ydotool(paste_method: &PasteMethod) -> Result<(), String> {
     let syntax = detect_ydotool_key_syntax();
-    let args = ydotool_key_args(paste_method, syntax)?;
+    let args = ydotool_key_args(paste_method, syntax, linux_keymap::paste_keycodes())?;
 
     let output = Command::new("ydotool")
-        .args(args)
+        .args(&args)
         .output()
         .map_err(|e| format!("Failed to execute ydotool: {}", e))?;
 
@@ -969,18 +1105,40 @@ e.g. 28:1 28:0 means pressing on the Enter button on a standard US keyboard.
     }
 
     #[cfg(target_os = "linux")]
+    const DEFAULT_CODES: PasteKeycodes = PasteKeycodes::DEFAULT;
+
+    /// `ctrl:swap_lalt_lctl`: Control_L is on the physical left Alt key.
+    #[cfg(target_os = "linux")]
+    const SWAPPED_ALT_CODES: PasteKeycodes = PasteKeycodes {
+        ctrl: 56,
+        ..PasteKeycodes::DEFAULT
+    };
+
+    /// `ctrl:swapcaps`: Control_L is on the physical Caps Lock key.
+    #[cfg(target_os = "linux")]
+    const CAPS_CTRL_CODES: PasteKeycodes = PasteKeycodes {
+        ctrl: 58,
+        ..PasteKeycodes::DEFAULT
+    };
+
+    /// `us(dvorak)`: `v` is on the QWERTY period key.
+    #[cfg(target_os = "linux")]
+    const DVORAK_CODES: PasteKeycodes = PasteKeycodes {
+        v: 52,
+        ..PasteKeycodes::DEFAULT
+    };
+
+    #[cfg(target_os = "linux")]
     #[test]
     fn generates_symbolic_ydotool_arguments_for_all_paste_methods() {
+        let args = |method| ydotool_key_args(&method, YdotoolKeySyntax::Symbolic, DEFAULT_CODES);
+        assert_eq!(args(PasteMethod::CtrlV).unwrap(), ["key", "ctrl+v"]);
         assert_eq!(
-            ydotool_key_args(&PasteMethod::CtrlV, YdotoolKeySyntax::Symbolic).unwrap(),
-            ["key", "ctrl+v"]
-        );
-        assert_eq!(
-            ydotool_key_args(&PasteMethod::CtrlShiftV, YdotoolKeySyntax::Symbolic).unwrap(),
+            args(PasteMethod::CtrlShiftV).unwrap(),
             ["key", "ctrl+shift+v"]
         );
         assert_eq!(
-            ydotool_key_args(&PasteMethod::ShiftInsert, YdotoolKeySyntax::Symbolic).unwrap(),
+            args(PasteMethod::ShiftInsert).unwrap(),
             ["key", "shift+insert"]
         );
     }
@@ -988,17 +1146,94 @@ e.g. 28:1 28:0 means pressing on the Enter button on a standard US keyboard.
     #[cfg(target_os = "linux")]
     #[test]
     fn generates_raw_ydotool_arguments_for_all_paste_methods() {
+        let args = |method| ydotool_key_args(&method, YdotoolKeySyntax::RawKeycodes, DEFAULT_CODES);
         assert_eq!(
-            ydotool_key_args(&PasteMethod::CtrlV, YdotoolKeySyntax::RawKeycodes).unwrap(),
+            args(PasteMethod::CtrlV).unwrap(),
             ["key", "29:1", "47:1", "47:0", "29:0"]
         );
         assert_eq!(
-            ydotool_key_args(&PasteMethod::CtrlShiftV, YdotoolKeySyntax::RawKeycodes).unwrap(),
+            args(PasteMethod::CtrlShiftV).unwrap(),
             ["key", "29:1", "42:1", "47:1", "47:0", "42:0", "29:0"]
         );
         assert_eq!(
-            ydotool_key_args(&PasteMethod::ShiftInsert, YdotoolKeySyntax::RawKeycodes).unwrap(),
+            args(PasteMethod::ShiftInsert).unwrap(),
             ["key", "42:1", "110:1", "110:0", "42:0"]
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn raw_ydotool_arguments_follow_the_resolved_keymap() {
+        let raw = |method, codes| ydotool_key_args(&method, YdotoolKeySyntax::RawKeycodes, codes);
+        assert_eq!(
+            raw(PasteMethod::CtrlV, SWAPPED_ALT_CODES).unwrap(),
+            ["key", "56:1", "47:1", "47:0", "56:0"]
+        );
+        assert_eq!(
+            raw(PasteMethod::CtrlShiftV, CAPS_CTRL_CODES).unwrap(),
+            ["key", "58:1", "42:1", "47:1", "47:0", "42:0", "58:0"]
+        );
+        assert_eq!(
+            raw(PasteMethod::CtrlV, DVORAK_CODES).unwrap(),
+            ["key", "29:1", "52:1", "52:0", "29:0"]
+        );
+        // Shift+Insert has no Ctrl or v, so a moved Ctrl does not touch it.
+        assert_eq!(
+            raw(PasteMethod::ShiftInsert, SWAPPED_ALT_CODES).unwrap(),
+            ["key", "42:1", "110:1", "110:0", "42:0"]
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn symbolic_ydotool_arguments_follow_the_resolved_keymap() {
+        let symbolic = |method, codes| ydotool_key_args(&method, YdotoolKeySyntax::Symbolic, codes);
+        assert_eq!(
+            symbolic(PasteMethod::CtrlV, SWAPPED_ALT_CODES).unwrap(),
+            ["key", "alt+v"]
+        );
+        assert_eq!(
+            symbolic(PasteMethod::CtrlShiftV, CAPS_CTRL_CODES).unwrap(),
+            ["key", "capslock+shift+v"]
+        );
+        assert_eq!(
+            symbolic(PasteMethod::CtrlV, DVORAK_CODES).unwrap(),
+            ["key", "ctrl+."]
+        );
+        // A key ydotool 0.1.8 cannot name falls back to the name Handy always sent.
+        let unnamed = PasteKeycodes {
+            ctrl: 183,
+            ..PasteKeycodes::DEFAULT
+        };
+        assert_eq!(
+            symbolic(PasteMethod::CtrlV, unnamed).unwrap(),
+            ["key", "ctrl+v"]
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn dotool_script_keeps_names_for_standard_keycodes() {
+        let script = |method| dotool_key_script(&method, DEFAULT_CODES).unwrap();
+        assert_eq!(script(PasteMethod::CtrlV), "key ctrl+v\n");
+        assert_eq!(script(PasteMethod::CtrlShiftV), "key ctrl+shift+v\n");
+        assert_eq!(script(PasteMethod::ShiftInsert), "key shift+insert\n");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn dotool_script_sends_resolved_keycodes() {
+        assert_eq!(
+            dotool_key_script(&PasteMethod::CtrlV, SWAPPED_ALT_CODES).unwrap(),
+            "keydown k:56\nkey k:47\nkeyup k:56\n"
+        );
+        assert_eq!(
+            dotool_key_script(&PasteMethod::CtrlShiftV, CAPS_CTRL_CODES).unwrap(),
+            "keydown k:58 k:42\nkey k:47\nkeyup k:42 k:58\n"
+        );
+        assert_eq!(
+            dotool_key_script(&PasteMethod::CtrlV, DVORAK_CODES).unwrap(),
+            "keydown k:29\nkey k:52\nkeyup k:29\n"
         );
     }
 

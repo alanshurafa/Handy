@@ -14,6 +14,8 @@ mod helpers;
 mod input;
 mod language_detection;
 mod languages;
+#[cfg(target_os = "linux")]
+mod linux_keymap;
 mod llm_client;
 mod managers;
 mod memory;
@@ -993,6 +995,11 @@ pub fn run(cli_args: CliArgs) {
                 });
                 return Ok(());
             }
+
+            // ydotool/dotool inject below XKB, so the paste chord's keycodes come from
+            // the active keymap. setup runs on the GTK main thread, as GDK requires.
+            #[cfg(target_os = "linux")]
+            linux_keymap::init();
 
             // Create main window programmatically so we can set data_directory
             // for portable mode (redirects WebView2 cache to portable Data dir)

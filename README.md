@@ -173,6 +173,7 @@ For reliable text input on Linux, install the appropriate tool for your display 
 - **Ubuntu 26.04**: Has Wayland display server by default. `wtype` does not work, you need to install `ydotool` and configure systemd as described [here](https://github.com/cjpais/Handy/pull/557#issuecomment-3781249267).
 - **Wayland**: Install `wtype` (preferred) or `dotool` for text input to work correctly
 - **dotool setup**: Requires adding your user to the `input` group: `sudo usermod -aG input $USER` (then log out and back in)
+- **Remapped Ctrl or non-QWERTY layouts**: `ydotool` and `dotool` send hardware keys, so for the Ctrl+V, Ctrl+Shift+V and Shift+Insert paste methods Handy looks up which keys produce Ctrl, Shift, Insert and `v` in your active keymap (for example with `ctrl:swap_lalt_lctl`, `ctrl:swapcaps` or Dvorak) and sends those. The log shows the keys it picked in a line starting `Linux paste keycodes from the active keymap`; if paste still sends the wrong chord, compare those numbers with `evtest` or `wev`.
 
 Without these tools, Handy falls back to enigo which may have limited compatibility, especially on Wayland.
 
