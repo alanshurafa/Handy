@@ -533,6 +533,7 @@
           "clipboardCtrlShiftV": "Klembord (Ctrl+Shift+V)",
           "clipboardShiftInsert": "Klembord (Shift+Insert)",
           "direct": "Direct",
+          "directCompatibility": "Direct (Slow)",
           "none": "Geen",
           "externalScript": "Extern script"
         },

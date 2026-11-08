@@ -533,6 +533,7 @@
           "clipboardCtrlShiftV": "Udklipsholder (Ctrl+Shift+V)",
           "clipboardShiftInsert": "Udklipsholder (Shift+Insert)",
           "direct": "Direkte",
+          "directCompatibility": "Direct (Slow)",
           "none": "Ingen",
           "externalScript": "Eksternt script"
         },
