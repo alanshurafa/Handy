@@ -413,4 +413,33 @@ mod tests {
     fn slow_type_rejects_unsupported_characters() {
         assert_eq!(slow_type_key_for_char('\u{00e9}'), None);
     }
+
+    #[test]
+    fn slow_type_covers_all_printable_ascii_and_whitespace() {
+        for ch in (0x20u8..=0x7e).map(char::from) {
+            assert!(
+                slow_type_key_for_char(ch).is_some(),
+                "printable ASCII {ch:?} must be typeable"
+            );
+        }
+        for ch in ['\n', '\r', '\t'] {
+            assert!(slow_type_key_for_char(ch).is_some());
+        }
+    }
+
+    #[test]
+    fn slow_type_falls_back_to_text_for_curly_quotes() {
+        assert_eq!(
+            slow_type_key_for_char('\u{2019}'),
+            Some(SlowTypeKey::TextFallback("'"))
+        );
+        assert_eq!(
+            slow_type_key_for_char('\u{201c}'),
+            Some(SlowTypeKey::TextFallback("\""))
+        );
+        assert_eq!(
+            slow_type_key_for_char('\u{201d}'),
+            Some(SlowTypeKey::TextFallback("\""))
+        );
+    }
 }

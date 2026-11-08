@@ -852,7 +852,10 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
             )?;
         }
         PasteMethod::DirectCompatibility => {
-            input::paste_text_slow(&mut enigo, &text)?;
+            let text = text.clone();
+            with_enigo(&app_handle, move |enigo| {
+                input::paste_text_slow(enigo, &text)
+            })?;
         }
         PasteMethod::CtrlV | PasteMethod::CtrlShiftV | PasteMethod::ShiftInsert => {
             // Debug-gated receipt-sequenced paste (#502): restore the clipboard
