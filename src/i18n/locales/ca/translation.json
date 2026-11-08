@@ -533,6 +533,7 @@
           "clipboardCtrlShiftV": "Porta-retalls (Ctrl+Maj+V)",
           "clipboardShiftInsert": "Porta-retalls (Maj+Insert)",
           "direct": "Directe",
+          "directCompatibility": "Direct (Slow)",
           "none": "Cap",
           "externalScript": "Script extern"
         },

@@ -533,6 +533,7 @@
           "clipboardCtrlShiftV": "क्लिपबोर्ड (Ctrl+Shift+V)",
           "clipboardShiftInsert": "क्लिपबोर्ड (Shift+Insert)",
           "direct": "डायरेक्ट",
+          "directCompatibility": "Direct (Slow)",
           "none": "कोई नहीं",
           "externalScript": "बाहरी स्क्रिप्ट"
         },

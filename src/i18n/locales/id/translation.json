@@ -533,6 +533,7 @@
           "clipboardCtrlShiftV": "Papan klip (Ctrl+Shift+V)",
           "clipboardShiftInsert": "Papan klip (Shift+Insert)",
           "direct": "Langsung",
+          "directCompatibility": "Direct (Slow)",
           "none": "Tidak Ada",
           "externalScript": "Skrip Eksternal"
         },
